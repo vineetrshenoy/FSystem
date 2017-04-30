@@ -32,6 +32,7 @@
 #include <sys/stat.h>
 #include <dirent.h>
 #include <time.h>
+#include <errno.h>
 #include <fuse.h>
 struct sfs_state {
     FILE *logfile;
