@@ -34,6 +34,7 @@ inode_block entry_buffer;
 struct stat s;
 metadata_info info;
 extern int diskfile;
+char * filepath;
 
 // CURRENTLY WORKS ONLY FOR TOTAL SIZE, MULTIPLES OF 4 MB (8MB, 16MB,32MB, ETC)
 /*
