@@ -674,7 +674,7 @@ int sfs_create(const char *path, mode_t mode, struct fuse_file_info *fi)
 
     block_write(info.dataregion_blocks_start + newDataBlock, &fblock);  //write the block to disk
 
-    
+    sfs_open(path, fi);
     
     return retstat;
 }
@@ -839,8 +839,113 @@ int sfs_write(const char *path, const char *buf, size_t size, off_t offset,
 {
     int retstat = 0;
     log_msg("\nsfs_write(path=\"%s\", buf=0x%08x, size=%d, offset=%lld, fi=0x%08x)\n",
-	    path, buf, size, offset, fi);
+      path, buf, size, offset, fi);
     
+    if (offset >= 12*BLOCK_SIZE) {
+      return 0;
+    }
+    if (offset + size > 12*BLOCK_SIZE) {
+      size = 12*BLOCK_SIZE - offset;
+    }
+    char ** fldrs = parsePath(path);
+    int numOfDirs = get_num_dirs(path);
+    int i;
+    filepath_block pathBlock = find_path_block(path);
+    if (strcmp(fldrs[numOfDirs - 1], pathBlock.filepath) != 0) {
+      for (i = 0; i < numOfDirs; i++) {
+        free(fldrs[i]);
+      }
+      free(fldrs);
+      return -1;
+    }
+    // printf("write inode number: %d\n", pathBlock.inode);
+    inode node = get_inode(pathBlock.inode);
+    int writeBlockNum = offset/BLOCK_SIZE;
+    if (offset%BLOCK_SIZE != 0) {
+      writeBlockNum++;
+    }
+    int writeOffset = offset%BLOCK_SIZE;
+    int currentNumOfBlocks = -1;
+    int numOfBlocksNeeded = 1;
+    for (i = 0; i < 12; i++) {
+      if (node.direct_ptrs[i] != 0) {
+        currentNumOfBlocks++;
+      }
+    }
+    if (currentNumOfBlocks < writeBlockNum) {
+      while (currentNumOfBlocks != writeBlockNum) {
+        currentNumOfBlocks++;
+        node.direct_ptrs[currentNumOfBlocks] = find_free_datablock() + info.dataregion_blocks_start;
+        set_dataregion_status(node.direct_ptrs[currentNumOfBlocks] - info.dataregion_blocks_start, 1);
+      }
+    }
+    if (size > BLOCK_SIZE - writeOffset) {
+      numOfBlocksNeeded = (size + writeOffset)/BLOCK_SIZE;
+      if ((size + writeOffset)%BLOCK_SIZE != 0) {
+        numOfBlocksNeeded++;
+      }
+      for (i = 0; i < numOfBlocksNeeded; i++) {
+        currentNumOfBlocks++;
+        node.direct_ptrs[currentNumOfBlocks] = find_free_datablock() + info.dataregion_blocks_start;
+        set_dataregion_status(node.direct_ptrs[currentNumOfBlocks] - info.dataregion_blocks_start, 1);
+      }
+    }
+    node.size = (currentNumOfBlocks)*BLOCK_SIZE;
+    if (size%BLOCK_SIZE != 0) {
+      node.size += size%BLOCK_SIZE;
+    }
+    else {
+      node.size += BLOCK_SIZE;
+    }
+    // printf("currentNumOfBlocks: %d\n", currentNumOfBlocks);
+    // printf("write node size: %d\n", node.size);
+    char buffer[BLOCK_SIZE];
+    int unwrittenSize = size;
+    if (numOfBlocksNeeded == 1) {
+      block_read(node.direct_ptrs[writeBlockNum], &buffer);
+      int j;
+      for (j = writeOffset; j < writeOffset + unwrittenSize; j++) {
+        buffer[j] = buf[j - writeOffset];
+      }
+      unwrittenSize = 0;
+      block_write(node.direct_ptrs[writeBlockNum], &buffer);
+    }
+    else {
+      for (i = 0; i < numOfBlocksNeeded; i++) {
+        block_read(node.direct_ptrs[writeBlockNum + i], &buffer);
+        if (i == 0) {
+          int j;
+          for (j = writeOffset; j < BLOCK_SIZE; j++) {
+            buffer[j] = buf[size - unwrittenSize + j - writeOffset];
+          }
+          unwrittenSize -= (BLOCK_SIZE - writeOffset);
+        }
+        else if (i == numOfBlocksNeeded - 1) {
+          int j;
+          for (j = 0; j < unwrittenSize; j++) {
+            buffer[j] = buf[size - unwrittenSize + j];
+          }
+          unwrittenSize = 0;
+        }
+        else {
+          int j;
+          for (j = 0; j < BLOCK_SIZE; j++) {
+            buffer[j] = buf[size - unwrittenSize + j];
+          }
+          unwrittenSize -= BLOCK_SIZE;
+        }
+        block_write(node.direct_ptrs[writeBlockNum + i], &buffer);
+      }
+    }
+    retstat = size;
+
+    set_inode(pathBlock.inode, node);
+
+    for (i = 0; i < numOfDirs; i++) {
+      free(fldrs[i]);
+    }
+    free(fldrs);
+    // printf("%s\n", buffer);
     
     return retstat;
 }
