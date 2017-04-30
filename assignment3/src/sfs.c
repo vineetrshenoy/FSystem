@@ -744,7 +744,7 @@ int sfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler, off_t offse
     filepath_block pathBlock = find_path_block(path);
     int numOfDirs = get_num_dirs(path);
     char ** fldrs = parsePath(path);
-
+    int i;
     if (strcmp(fldrs[numOfDirs -1], pathBlock.filepath) != 0) {
       retstat = -1;
       for (i = 0; i < numOfDirs; i++) {
@@ -754,13 +754,13 @@ int sfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler, off_t offse
       return retstat;
     }
     inode pathInode = get_inode(pathBlock.inode);
-    int i;
+    
     filepath_block dblock;
     int fillerReturn;
     for (i = 0; i < 12; i++) {
       if (pathInode.direct_ptrs[i] != 0) {
         block_read(pathInode.direct_ptrs[i], &dblock);
-        fillerReturn = filler(buf, dblock.filepath, NULL, sizeof(struct filepath_block));
+        fillerReturn = filler(buf, dblock.filepath, NULL, sizeof(dblock));
         if (fillerReturn != 0) {
           for (i = 0; i < numOfDirs; i++) {
             free(fldrs[i]);
