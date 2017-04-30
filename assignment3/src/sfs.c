@@ -582,11 +582,13 @@ int sfs_getattr(const char *path, struct stat *statbuf)
     }
     inode node = get_inode(pathBlock.inode);
     if (node.flags == 1) {
-      statbuf->st_mode = S_IFDIR | S_IRWXU | S_IRGRP | S_IXGRP | S_IROTH | S_IXOTH;
+      statbuf->st_mode = S_IFDIR | S_IRWXU | S_IRWXG | S_IRWXO;
+      //statbuf->st_mode = S_IFDIR | S_IRWXU | S_IRGRP | S_IXGRP | S_IROTH | S_IXOTH;
       statbuf->st_nlink = 2;
     }
     else {
-      statbuf->st_mode = S_IFREG | S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH;
+      statbuf->st_mode = S_IFREG | S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH;
+      //statbuf->st_mode = S_IFREG | S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH;
       statbuf->st_nlink = 1;
     }
 
