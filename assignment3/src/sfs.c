@@ -818,10 +818,86 @@ int sfs_release(const char *path, struct fuse_file_info *fi)
  */
 int sfs_read(const char *path, char *buf, size_t size, off_t offset, struct fuse_file_info *fi)
 {
-    int retstat = 0;
+     int retstat = 0;
     log_msg("\nsfs_read(path=\"%s\", buf=0x%08x, size=%d, offset=%lld, fi=0x%08x)\n",
-	    path, buf, size, offset, fi);
+      path, buf, size, offset, fi);
 
+    char ** fldrs = parsePath(path);
+    int numOfDirs = get_num_dirs(path);
+    int i;
+    filepath_block pathBlock = find_path_block(path);
+    if (strcmp(fldrs[numOfDirs - 1], pathBlock.filepath) != 0) {
+      for (i = 0; i < numOfDirs; i++) {
+        free(fldrs[i]);
+      }
+      free(fldrs);
+      return -1;
+    }
+    // printf("read inode number: %d\n", pathBlock.inode);
+    inode node = get_inode(pathBlock.inode);
+    int fileSize = node.size;
+    // printf("filesize: %d\n", fileSize);
+    if (offset >= fileSize) {
+      return 0;
+    }
+    if (offset + size > fileSize) {
+      size = fileSize - offset;
+    }
+    int readBlockNum = offset/BLOCK_SIZE;
+    if (offset%BLOCK_SIZE != 0) {
+      readBlockNum++;
+    }
+    int readOffset = offset%BLOCK_SIZE;
+    int numOfBlocksNeeded = 1;
+    if (size > BLOCK_SIZE - readOffset) {
+      numOfBlocksNeeded = (size + readOffset)/BLOCK_SIZE;
+      if ((size + readOffset)%BLOCK_SIZE != 0) {
+        numOfBlocksNeeded++;
+      }
+    }
+    char buffer[BLOCK_SIZE];
+    int unreadSize = size;
+    if (numOfBlocksNeeded == 1) {
+      block_read(node.direct_ptrs[readBlockNum], &buffer);
+      int j;
+      for (j = readOffset; j < readOffset + unreadSize; j++) {
+        buf[j - readOffset] = buffer[j];
+      }
+      unreadSize = 0;
+    }
+    else {
+      for (i = 0; i < numOfBlocksNeeded; i++) {
+        block_read(node.direct_ptrs[readBlockNum + i], &buffer);
+        if (i == 0) {
+          int j;
+          for (j = readOffset; j < BLOCK_SIZE; j++) {
+            buf[size - unreadSize + j - readOffset] = buffer[j];
+          }
+          unreadSize -= (BLOCK_SIZE - readOffset);
+        }
+        else if (i == numOfBlocksNeeded - 1) {
+          int j;
+          for (j = 0; j < unreadSize; j++) {
+            buf[size - unreadSize + j] = buffer[j];
+          }
+          unreadSize = 0;
+        }
+        else {
+          int j;
+          for (j = 0; j < BLOCK_SIZE; j++) {
+            buf[size - unreadSize + j] = buffer[j];
+          }
+          unreadSize -= BLOCK_SIZE;
+        }
+      }
+    }
+
+    retstat = size;
+
+    for (i = 0; i < numOfDirs; i++) {
+      free(fldrs[i]);
+    }
+    free(fldrs);
    
     return retstat;
 }
