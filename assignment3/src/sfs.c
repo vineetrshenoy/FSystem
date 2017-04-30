@@ -578,7 +578,7 @@ int sfs_getattr(const char *path, struct stat *statbuf)
         free(fldrs[i]);
       }
       free(fldrs);
-      errno = ENOENT;
+      errno = -ENOENT;
       return errno;
     }
     inode node = get_inode(pathBlock.inode);
