@@ -29,7 +29,301 @@
 
 #include "log.h"
 
+char buffer[BLOCK_SIZE];
+inode_block entry_buffer;
+struct stat s;
+metadata_info info;
+extern int diskfile;
 
+// CURRENTLY WORKS ONLY FOR TOTAL SIZE, MULTIPLES OF 4 MB (8MB, 16MB,32MB, ETC)
+/*
+  This function initializes all the structure: 25% is for metadata, 75% for data
+  
+  INPUT: The total size of the file, metadata_info pointer to store metadata value
+  OUTPUT: 0 on success
+*/
+int get_metadata_info(int total_size, metadata_info * info){
+
+  // ----------------------------------------------
+  //This gets just the information for the data regions 
+
+  int data_size = 0.75 * total_size; //75% of the total space will be used for the data region
+  int data_blocks = data_size / BLOCK_SIZE;  //Gets the actual number of data blocks
+  // See how many bitmap blocks are needed to address all the data blocks.
+  //Each bitmap block can address BITS_PER_BLOCK blcoks
+  int data_bitmap_blocks = data_blocks / BITS_PER_BLOCK; 
+  info->dataregion_blocks = data_blocks;
+  info->dataregion_bitmap_blocks = data_bitmap_blocks;
+
+  //----------------------------------------------------
+
+  int metadata_size = total_size - data_size; //25% of th total space for metadata
+  int num_metadata_blocks = metadata_size / (BLOCK_SIZE); //Number of blocks based on size
+  num_metadata_blocks = num_metadata_blocks - data_bitmap_blocks - 1; // Total blocks minus data_bitmap_blocks minus superblock
+
+  int inode_bitmap =  num_metadata_blocks / VALUE; //gets the number of inodes. See documentation
+    if (inode_bitmap % VALUE != 0){
+      inode_bitmap++;
+    }
+  num_metadata_blocks = num_metadata_blocks - inode_bitmap;
+
+
+
+  info->disksize = total_size;
+  info->inode_blocks = num_metadata_blocks;
+  info->inode_bitmap_blocks = inode_bitmap;
+  
+  info->total_inodes = info->inode_blocks * INODES_PER_BLOCK;
+
+  info->dataregion_bitmap_start = 1;
+  info->inode_bitmap_start = 1 + info->dataregion_bitmap_blocks;
+
+  info->inode_blocks_start = 1 + info->dataregion_bitmap_blocks + info->inode_bitmap_blocks;
+  info->dataregion_blocks_start = 1 + info->dataregion_bitmap_blocks + info->inode_bitmap_blocks + info->inode_blocks;
+  info->rootdirectory = 0;
+
+  return 0;
+
+}
+
+
+
+
+/*
+  Checks the status of a specific inode. Returns this value
+  
+  INPUT: The inode number to check
+  OUTPUT: The status (1 allocated, 0 unallocated)
+*/
+int check_inode_status(int inode_number){
+
+  int blk_number = inode_number/(BITS_PER_BLOCK); //Finds out in which block bit is
+  block_read(info.inode_bitmap_start + blk_number, buffer); //reads the block
+
+  int byte_offset = (inode_number - (BITS_PER_BLOCK * blk_number)) / BITS_PER_BYTE; //Finds how many bytes from begining that specific bit is
+  char * ptr = buffer + byte_offset; 
+  char data_bits = *ptr; //Obtains 8 bits in which desired bit is contained
+
+  int bit_offset = inode_number - (BITS_PER_BLOCK * blk_number) - (byte_offset * BITS_PER_BYTE); //where in the 8 bits the desired is lcoated
+  int bit = ZERO_INDEX_BITS - bit_offset; //counting offset from the MSB
+  
+
+  bit = (data_bits & ( 1 << bit )) >> bit; //Gets the required bit
+    
+  return bit;
+}
+
+
+/*
+  Sets the status of a specific inode. Returns this value
+  
+  INPUT: The inode number to set, the value to set it to
+  OUTPUT: The status (1 allocated, 0 unallocated)
+*/
+int set_inode_status(int inode_number, int status){
+
+  int blk_number = inode_number/(BITS_PER_BLOCK); //Finds out in which block bit is
+  block_read(info.inode_bitmap_start + blk_number, buffer); //reads the block
+
+  int byte_offset = (inode_number - (BITS_PER_BLOCK * blk_number)) / BITS_PER_BYTE;//Finds how many bytes from begining that specific bit is
+  char * ptr = buffer + byte_offset;
+  char data_bits = *ptr; //Obtains 8 bits in which desired bit is contained
+
+  int bit_offset = inode_number - (BITS_PER_BLOCK * blk_number) - (byte_offset * BITS_PER_BYTE); //where in the 8 bits the desired is lcoated
+  int bit = ZERO_INDEX_BITS - bit_offset;
+
+  data_bits ^= (-status ^ data_bits) & (1 << bit); //sets the required bit
+  *ptr = data_bits; //puts set of 8 bits back into buffer
+  block_write(info.inode_bitmap_start + blk_number, buffer); //writes block back to file
+  return 0;
+
+}
+
+
+
+/*
+  Checks the status of a specific inode. Returns this value
+  
+  INPUT: The inode number to check
+  OUTPUT: The status (1 allocated, 0 unallocated)
+*/
+int check_dataregion_status(int datablock_number){
+
+  int blk_number = datablock_number/(BITS_PER_BLOCK); //Finds out in which block bit is
+  block_read(info.dataregion_bitmap_start + blk_number, buffer);  //reads the block
+
+  int byte_offset = (datablock_number - (BITS_PER_BLOCK * blk_number)) / BITS_PER_BYTE; //Finds how many bytes from begining that specific bit is
+  char * ptr = buffer + byte_offset; 
+  char data_bits = *ptr; //Obtains 8 bits in which desired bit is contained
+
+  int bit_offset = datablock_number - (BITS_PER_BLOCK * blk_number) - (byte_offset * BITS_PER_BYTE); //where in the 8 bits the desired is lcoated
+  int bit = ZERO_INDEX_BITS - bit_offset; //counting offset from the MSB
+  
+
+  bit = (data_bits & ( 1 << bit )) >> bit; //Gets the required bit
+    
+  return bit;
+}
+
+
+/*
+  Sets the status of a specific inode. Returns this value
+  
+  INPUT: The inode number to set, the value to set it to
+  OUTPUT: The status (1 allocated, 0 unallocated)
+*/
+int set_dataregion_status(int datablock_number, int status){
+
+  int blk_number = datablock_number/(BITS_PER_BLOCK); //Finds out in which block bit is
+  block_read(info.dataregion_bitmap_start + blk_number, buffer);  //reads the block
+
+  int byte_offset = (datablock_number - (BITS_PER_BLOCK * blk_number)) / BITS_PER_BYTE;//Finds how many bytes from begining that specific bit is
+  char * ptr = buffer + byte_offset;
+  char data_bits = *ptr; //Obtains 8 bits in which desired bit is contained
+
+  int bit_offset = datablock_number - (BITS_PER_BLOCK * blk_number) - (byte_offset * BITS_PER_BYTE); //where in the 8 bits the desired is lcoated
+  int bit = ZERO_INDEX_BITS - bit_offset;
+
+  data_bits ^= (-status ^ data_bits) & (1 << bit); //sets the required bit
+  *ptr = data_bits; //puts set of 8 bits back into buffer
+  block_write(info.dataregion_bitmap_start + blk_number, buffer); //writes block back to file
+  return 0;
+
+}
+
+/*
+  Gets a copy of the specified inode at returns it to the user
+  INPUT: The inode number that is requested
+  OUTPUT: A struct containing the inode
+*/
+
+inode get_inode(int inode_number){
+    
+  inode node;
+  int blk_number = inode_number / INODES_PER_BLOCK; // Finds which block to read
+  block_read(info.inode_blocks_start + blk_number, &entry_buffer); // Reads the block
+  
+  
+  int offset = inode_number - (INODES_PER_BLOCK * blk_number);
+  node = (entry_buffer.list[offset]);
+  return node;
+  
+}
+
+/*
+  Sets a certain inode in the metadata region
+  INPUT: The inode number to write to, the inode itself
+  OUTPUT: none
+*/
+void set_inode(int inode_number, inode node){
+
+  int blk_number = inode_number / INODES_PER_BLOCK; // Finds which block to read
+  block_read(info.inode_blocks_start + blk_number, &entry_buffer); // Reads the block
+  
+  
+  int offset = inode_number - (INODES_PER_BLOCK * blk_number);
+  entry_buffer.list[offset] = node;
+  block_write(info.inode_blocks_start + blk_number, &entry_buffer);
+  
+}
+
+/*  
+    Gets the number of directories given a path
+    INPUT: The path
+    OUTPUT: integer stating which has the number of directories
+*/
+int get_num_dirs(const char * path){
+  int length = strlen(path);
+  char slash = 47;
+  int i, count;
+  count = 0;
+  for (i = 0; i < length; i++){
+    if (path[i] == slash)
+      count++;
+  }
+  return count;
+}
+
+/*  
+    Gets each portion of the filepath
+    INPUT: The path
+    OUTPUT: char ** with each string as a different path
+*/
+char ** parsePath(const char * path){
+
+  int length = strlen(path);
+  int i, count;
+  char slash = 47;
+  count = 0;
+
+  //Figures out how many "/" are present -- stores in count
+  for (i = 0; i < length; i++){
+    if (path[i] == slash)
+      count++;
+  }
+  
+
+  int * indices = (int * ) calloc ((count + 1), sizeof(int)); //stores the index of each slash
+  int j = 0;
+  for (i = 0; i < length; i++){
+
+    if (path[i] == slash){
+      indices[j] = i;
+      j++;
+    }
+
+    
+  }
+  indices[count] = length; 
+
+  char ** strings = (char **) calloc(count , sizeof(char *)); //MUST FREE THIS LATER
+
+  for (i = 0; i < count; i++){
+    int size = (indices[i + 1] - indices[i]);
+    strings[i] = (char *) calloc(size, sizeof(char));
+    strncpy(strings[i], (path + indices[i] + 1), (size - 1));
+    
+  }
+  free(indices);
+  
+  return strings;
+
+}
+/*  
+    Finds a free datablock
+    INPUT: NONE
+    OUTPUT: integer stating which datablock
+*/
+
+int find_free_datablock(){
+  char data_buffer[BLOCK_SIZE];
+  int i, j;
+  int totalDatablocks = info.dataregion_blocks;
+  for (i = 0; i < totalDatablocks; i++){
+    if (check_dataregion_status(i) == 0)
+      return i;
+    
+  }
+
+  return -1;
+}
+
+/*  
+    Finds a free inode
+    INPUT: NONE
+    OUTPUT: integer stating which inode
+*/
+int find_free_inode(){
+  int i;
+  int totalInodes = info.total_inodes;
+  for (i = 0; i < totalInodes; i++){
+    if (check_inode_status(i) == 0)
+      return i;
+    
+  }
+
+  return -1;
+}
 ///////////////////////////////////////////////////////////
 //
 // Prototypes for all these functions, and the C-style comments,
@@ -48,11 +342,79 @@
  */
 void *sfs_init(struct fuse_conn_info *conn)
 {
+    inode node;
+    inode_block block;
+    super_block sblock;
+    int count;
+
     fprintf(stderr, "in bb-init\n");
     log_msg("\nsfs_init()\n");
     
     log_conn(conn);
     log_fuse_context(fuse_get_context());
+
+    disk_open(path);
+    count = 0;
+
+    //clearing all fields for the node
+    int i;  
+    node.size = 0;
+    node.indirect_ptr = 0;
+    node.test = 0;
+    node.flags = 0;
+    
+
+    for(i = 0; i < 12; i++){
+      node.direct_ptrs[i] = 0;
+    }
+
+    //clearing all fields for the inode_entry
+    for(i = 0; i < 8; i++){
+      block.list[i] = node;
+    }
+
+
+    fstat(diskfile, &s); //get file information
+    get_metadata_info(s.st_size, &info);
+
+    sblock.list[0] = info;
+
+    //printf("Writing the superblock\n");
+    block_write(count, &sblock);
+    count++;
+
+    //printf("Writing the data bitmap\n");
+    for (i = 0; i < info.dataregion_bitmap_blocks; i++){
+      block_write(count, buffer);
+      count++;
+    }
+
+    //printf("Writing the inode bitmap\n");
+    for (i = 0; i < info.inode_bitmap_blocks; i++){
+      block_write(count, buffer);
+      count++;
+    }
+
+    //printf("Writing the inode blocks\n");
+    for (i = 0; i < info.inode_blocks; i++){
+      block_write(count, &block);
+      count++;
+    }
+
+    //setting root
+    filepath_block fblock;
+
+    strcpy(fblock.filepath, "");  //set the name to ""
+    fblock.inode = 0;
+    inode firstNode = get_inode(0); //gets the inode
+    firstNode.size = 12 * BLOCK_SIZE; //sets the size
+    firstNode.flags = 1;  //sets the flags
+    set_inode(0,firstNode); //puts inode back in
+    set_inode_status(0,1); //sets inode status to allocated
+    set_dataregion_status(0, 1); //sets dataregion status to allocated
+    block_write(info.dataregion_blocks_start, &fblock); //writes the block
+
+
 
     return SFS_DATA;
 }
