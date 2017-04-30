@@ -379,7 +379,7 @@ filepath_block find_path_block(const char * path){
   return block_return;
 }
 
-filepath_block find_directory_block(char * path){
+filepath_block find_directory_block(const char * path){
 
   inode node;
   filepath_block path_block, block_return;
