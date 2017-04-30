@@ -325,6 +325,59 @@ int find_free_inode(){
 
   return -1;
 }
+
+filepath_block find_path_block(const char * path){
+
+  inode node;
+  filepath_block path_block, block_return;
+
+  int i,j, notfound;
+
+  int numOfDirs = get_num_dirs(path); //Gets the number of directories
+  char ** fldrs = parsePath(path);  //Gets the strings for all paths
+  block_read(info.dataregion_blocks_start, &block_return);
+  i = 0;
+  //while we still have directories to search
+  while (i < numOfDirs){
+
+    node = get_inode(block_return.inode); //get the inode of the directory
+    
+
+    char * searchFolder = fldrs[i]; //The current folder we are looking for
+    notfound = 0;
+    //search all direct pointers in our inode
+    for (j = 0; j < 12; j++){
+
+      //we should always skip 0 (this is root)
+      if (node.direct_ptrs[j] != 0){
+        block_read(node.direct_ptrs[j], &path_block); //read the block
+        //compare the this folder with searchFolder; if match, get next node
+        if (strcmp (searchFolder, path_block.filepath) == 0){
+          block_return = path_block;
+          i++;
+          break;
+        }
+      }
+      notfound++;
+    }
+
+    if (notfound == 12){
+      //Free all ptrs
+      for(i = 0; i < numOfDirs; i++)
+        free(fldrs[i]);
+      free(fldrs);
+
+      return block_return;
+    }
+
+  }
+
+  //Free all ptrs
+  for(i = 0; i < numOfDirs; i++)
+    free(fldrs[i]);
+  free(fldrs);
+  return block_return;
+}
 ///////////////////////////////////////////////////////////
 //
 // Prototypes for all these functions, and the C-style comments,
