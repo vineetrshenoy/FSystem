@@ -602,11 +602,11 @@ int sfs_getattr(const char *path, struct stat *statbuf)
       free(fldrs[i]);
     }
     free(fldrs);
-    
+    /*
     statbuf->st_atime = time(NULL);
     statbuf->st_mtime = time(NULL);
     statbuf->st_ctime = time(NULL);
-    
+    */
     return retstat;
 }
 
