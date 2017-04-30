@@ -585,6 +585,45 @@ int sfs_unlink(const char *path)
     int retstat = 0;
     log_msg("sfs_unlink(path=\"%s\")\n", path);
 
+    filepath_block pathBlock = find_path_block(path);
+    int numOfDirs = get_num_dirs(path);
+    char ** fldrs = parsePath(path);
+    int i;
+
+    if (strcmp(fldrs[numOfDirs -1], pathBlock.filepath) != 0) {
+      retstat = -1;
+      for (i = 0; i < numOfDirs; i++) {
+          free(fldrs[i]);
+      }
+      free(fldrs);
+      return retstat;
+    }
+    inode node = get_inode(pathBlock.inode);
+    for (i = 0; i < 12; i++) {
+      if (node.direct_ptrs[i] != 0) {
+        set_dataregion_status(node.direct_ptrs[i] - info.dataregion_blocks_start, 0);
+      }
+    }
+    set_inode_status(pathBlock.inode, 0);
+    filepath_block directoryBlock = find_directory_block(path);
+    inode dnode = get_inode(directoryBlock.inode);
+    filepath_block ptr_block;
+    for (i = 0; i < 12; i++) {
+      if (dnode.direct_ptrs[i] != 0) {
+        block_read(dnode.direct_ptrs[i], &ptr_block); //read the block
+        //compare the this folder with searchFolder; if match, get next node
+        if (strcmp (pathBlock.filepath, ptr_block.filepath) == 0){
+          dnode.direct_ptrs[i] = 0;
+          set_dataregion_status(dnode.direct_ptrs[i] - info.dataregion_blocks_start, 0);
+          set_inode(directoryBlock.inode, dnode);
+          break;
+        }
+      }
+    }
+    for (i = 0; i < numOfDirs; i++) {
+      free(fldrs[i]);
+    }
+    free(fldrs);
     
     return retstat;
 }
