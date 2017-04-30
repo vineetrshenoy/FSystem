@@ -494,11 +494,65 @@ void sfs_destroy(void *userdata)
  */
 int sfs_getattr(const char *path, struct stat *statbuf)
 {
-    int retstat = 0;
+     int retstat = 0;
+    char slash = 47;
     char fpath[PATH_MAX];
     
     log_msg("\nsfs_getattr(path=\"%s\", statbuf=0x%08x)\n",
-	  path, statbuf);
+    path, statbuf);
+
+    memset(statbuf, 0, sizeof(struct stat)); // initialize buffer
+    statbuf->st_dev = 0;
+    statbuf->st_blksize = 0;
+    statbuf->st_ino = 0;
+    //memset(&fpath, '?', PATH_MAX);  // initialize fpath before copying path into it so the final character can be found
+    //strcpy(fpath, path);
+    /*char finalChar;
+    for (i = 0; i < PATH_MAX; i++) {
+      if (fpath[i] == '?') {
+        finalChar = fpath[i - 1];
+        break;
+      }
+    }
+    */
+    char ** fldrs = parsePath(path);
+    int numOfDirs = get_num_dirs(path);
+    filepath_block pathBlock = find_path_block(path);
+    int i;
+    printf("path: '%s'\n", fldrs[numOfDirs - 1]);
+    if (strcmp(pathBlock.filepath, fldrs[numOfDirs - 1]) != 0) {
+      for (i = 0; i < numOfDirs; i++) {
+        free(fldrs[i]);
+      }
+      free(fldrs);
+      return -1;
+    }
+    inode node = get_inode(pathBlock.inode);
+    if (node.flags == 1) {
+      statbuf->st_mode = S_IFDIR | S_IRWXU | S_IRGRP | S_IXGRP | S_IROTH | S_IXOTH;
+      statbuf->st_nlink = 2;
+    }
+    else {
+      statbuf->st_mode = S_IFREG | S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH;
+      statbuf->st_nlink = 1;
+    }
+
+    statbuf->st_uid = getuid();
+    statbuf->st_gid = getgid();
+    statbuf->st_rdev = 0;
+    statbuf->st_size = node.size;
+    statbuf->st_blocks = node.size/BLOCK_SIZE;
+    if (node.size%BLOCK_SIZE != 0) {
+      statbuf->st_blocks += 1;
+    }
+    for (i = 0; i < numOfDirs; i++) {
+      free(fldrs[i]);
+    }
+    free(fldrs);
+    
+    statbuf->st_atime = time(NULL);
+    statbuf->st_mtime = time(NULL);
+    statbuf->st_ctime = time(NULL);
     
     return retstat;
 }
