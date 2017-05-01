@@ -1174,10 +1174,38 @@ int sfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler, off_t offse
  * Introduced in version 2.3
  */
 int sfs_releasedir(const char *path, struct fuse_file_info *fi)
-{
+{ 
     int retstat = 0;
 
-    
+    char ** fldrs = parsePath(path);
+    int numOfDirs = get_num_dirs(path);
+    int i;
+    filepath_block pathBlock = find_path_block(path);
+    if (strcmp(fldrs[numOfDirs - 1], pathBlock.filepath) != 0) {
+      for (i = 0; i < numOfDirs; i++) {
+        free(fldrs[i]);
+      }
+      free(fldrs);
+      return -1;
+    }
+
+    inode node = get_inode(pathBlock.inode);
+
+    if (node.flags != 1){
+
+      for (i = 0; i < numOfDirs; i++) {
+        free(fldrs[i]);
+      }
+      free(fldrs);
+      return -1;
+
+    }
+
+
+    for (i = 0; i < numOfDirs; i++) {
+      free(fldrs[i]);
+    }
+    free(fldrs);
     return retstat;
 }
 
