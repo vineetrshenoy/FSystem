@@ -1087,7 +1087,7 @@ int sfs_mkdir(const char *path, mode_t mode)
 
     block_write(info.dataregion_blocks_start + newDataBlock, &fblock);  //write the block to disk
 
-    sfs_open(path, fi);
+    
     
     return retstat;
 }
