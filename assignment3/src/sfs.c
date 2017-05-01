@@ -1036,7 +1036,58 @@ int sfs_mkdir(const char *path, mode_t mode)
     int retstat = 0;
     log_msg("\nsfs_mkdir(path=\"%s\", mode=0%3o)\n",
 	    path, mode);
-   
+   filepath_block block, fblock;
+
+    int numOfDirs = get_num_dirs(path); //
+    char ** fldrs = parsePath(path); //
+
+    block = find_path_block(path); //try to find the path
+    if (strcmp(fldrs[numOfDirs -1], block.filepath) == 0){
+      //the file exists
+      printf("already exists\n");
+      return -1;
+    }
+
+    //find a free inode
+    int newInodeNum, newDataBlock;
+    
+    newInodeNum = find_free_inode();
+    set_inode_status(newInodeNum, 1);
+    
+
+    newDataBlock = find_free_datablock();
+    set_dataregion_status(newDataBlock, 1); //set dataregion to allocated
+    strcpy(fblock.filepath, fldrs[numOfDirs - 1]); //copy the new path name to block
+    fblock.inode = newInodeNum; //associate data entry with inode field
+
+
+    //finding a directptr for new block
+    int i, ptr;
+
+    inode node = get_inode(block.inode);
+    for (i = 0; i < 12; i++){
+      if (node.direct_ptrs[i] == 0){
+        ptr = i;
+        break;
+      }
+    }
+
+    node.direct_ptrs[ptr] = info.dataregion_blocks_start + newDataBlock;
+    set_inode(block.inode, node);
+
+    inode newInode = get_inode(newInodeNum); //get the new inode
+    newInode.size = 12 * BLOCK_SIZE;  //sets the directory block size
+    newInode.flags = 1;
+    set_inode(newInodeNum, newInode); //puts the inode back
+
+    //freeing all the ptrs from before
+    for(i = 0; i < numOfDirs; i++)
+      free(fldrs[i]);
+    free(fldrs);
+
+    block_write(info.dataregion_blocks_start + newDataBlock, &fblock);  //write the block to disk
+
+    sfs_open(path, fi);
     
     return retstat;
 }
@@ -1176,7 +1227,7 @@ int sfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler, off_t offse
 int sfs_releasedir(const char *path, struct fuse_file_info *fi)
 { 
     int retstat = 0;
-
+    log_msg("\n entering sfs_releasedir \n");
     char ** fldrs = parsePath(path);
     int numOfDirs = get_num_dirs(path);
     int i;
