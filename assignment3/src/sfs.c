@@ -754,7 +754,7 @@ int sfs_open(const char *path, struct fuse_file_info *fi)
     //log_msg("\n The inode number is %d", block.inode);
     if (strcmp(fldrs[numOfDirs - 1], pathBlock.filepath) != 0) {
       //fi->flags = fi->flags | O_CREAT;
-      sfs_create(path, S_IRWXU, fi);
+      sfs_create(path, S_IFREG, fi);
       for (i = 0; i < numOfDirs; i++) {
         free(fldrs[i]);
       }
@@ -1066,6 +1066,38 @@ int sfs_opendir(const char *path, struct fuse_file_info *fi)
     int retstat = 0;
     log_msg("\nsfs_opendir(path=\"%s\", fi=0x%08x)\n",
 	  path, fi);
+    
+    char ** fldrs = parsePath(path);
+    int numOfDirs = get_num_dirs(path);
+    int i;
+    filepath_block pathBlock = find_path_block(path);
+    //log_msg("\n The inode number is %d", block.inode);
+    if (strcmp(fldrs[numOfDirs - 1], pathBlock.filepath) != 0) {
+      //fi->flags = fi->flags | O_CREAT;
+      
+      for (i = 0; i < numOfDirs; i++) {
+        free(fldrs[i]);
+      }
+      free(fldrs);
+      return -1;
+    }
+
+    inode node = get_inode(pathBlock.inode);
+
+    if (node.flags != 1){
+
+      for (i = 0; i < numOfDirs; i++) {
+        free(fldrs[i]);
+      }
+      free(fldrs);
+      return -1;
+
+    }
+    
+    for (i = 0; i < numOfDirs; i++) {
+      free(fldrs[i]);
+    }
+    free(fldrs);
     
     
     return retstat;
