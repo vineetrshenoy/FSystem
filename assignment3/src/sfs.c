@@ -1095,12 +1095,13 @@ int sfs_opendir(const char *path, struct fuse_file_info *fi)
 int sfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler, off_t offset,
 	       struct fuse_file_info *fi)
 {
-    int retstat = 0;
+    int retstat = 0;  
     log_msg("\n entering readdir \n");
-    filepath_block pathBlock = find_path_block(path);
-    int numOfDirs = get_num_dirs(path);
-    char ** fldrs = parsePath(path);
+    filepath_block pathBlock = find_path_block(path); //gets file path block
+    int numOfDirs = get_num_dirs(path); //get num of directories
+    char ** fldrs = parsePath(path); //parses path
     int i;
+    //if paths are not the same, does not exist an dreturn.
     if (strcmp(fldrs[numOfDirs -1], pathBlock.filepath) != 0) {
       retstat = -1;
       for (i = 0; i < numOfDirs; i++) {
@@ -1109,14 +1110,16 @@ int sfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler, off_t offse
       free(fldrs);
       return retstat;
     }
-    inode pathInode = get_inode(pathBlock.inode);
+
+    inode pathInode = get_inode(pathBlock.inode); //gets inode of path
     
     filepath_block dblock;
     int fillerReturn;
     for (i = 0; i < 12; i++) {
       if (pathInode.direct_ptrs[i] != 0) {
         block_read(pathInode.direct_ptrs[i], &dblock);
-        fillerReturn = filler(buf, dblock.filepath, NULL, sizeof(dblock));
+        fillerReturn = filler(buf, dblock.filepath, NULL, 0);
+        //if unsuccessful, free pointers and return
         if (fillerReturn != 0) {
           for (i = 0; i < numOfDirs; i++) {
             free(fldrs[i]);
